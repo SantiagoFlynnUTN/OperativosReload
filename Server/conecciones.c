@@ -1,85 +1,70 @@
 /*
-    ** selectserver.c -- servidor de chat multiusuario
-    */
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <string.h>
-    #include <unistd.h>
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-	#include <pthread.h>
+ * conecciones.c
+ *
+ *  Created on: 7/8/2017
+ *      Author: utnso
+ */
 
-	#define PORT 9034   // puerto en el que escuchamos
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+#include "serializacion.h"
+#include "conecciones.h"
 
+fd_set master;   // conjunto maestro de descriptores de fichero
 
-void* holaMundo(void* arg){
+void comprobarConexion(int numbytes, int socket){
+	 if (numbytes <= 0) {
+		// error o conexión cerrada por el cliente
+		if (numbytes == 0) {
+			// conexión cerrada
+			printf("selectserver: socket %d hung up\n", socket);
+		} else {
+			perror("recv");
+		}
+		close(socket); // bye!
+		FD_CLR(socket, &master); // eliminar del conjunto maestro
 
-	int numbytes;
-	char buf[1000];
-	int newfd;
-	newfd = (int) arg;
-
-	if (send(newfd, "asd\n", 4, 0) == -1)
-			perror("send");
-	if ((numbytes=recv(newfd, buf,1024, 0)) == -1) {
-					perror("recv");
-					exit(1);
-	}
-	buf[numbytes] = '\0';
-
-	printf("Received: %s\n",buf);
-
-	sleep(2);
-	if (send(newfd, "hola\n", 5, 0) == -1)
-			perror("send");
-	if ((numbytes=recv(newfd, buf,1024, 0)) == -1) {
-					perror("recv");
-					exit(1);
-	}
-	buf[numbytes] = '\0';
-
-	printf("Received: %s\n",buf);
-	sleep(2);
-	if (send(newfd, "bienvenido\n", 11, 0) == -1)
-			perror("send");
-	if ((numbytes=recv(newfd, buf,1024, 0)) == -1) {
-					perror("recv");
-					exit(1);
-	}
-	buf[numbytes] = '\0';
-
-	printf("Received: %s\n",buf);
-	sleep(2);
-	if (send(newfd, "chau\n", 5, 0) == -1)
-			perror("send");
-	if ((numbytes=recv(newfd, buf,1024, 0)) == -1) {
-					perror("recv");
-					exit(1);
-	}
-	buf[numbytes] = '\0';
-
-	printf("Received: %s\n",buf);
-	sleep(2);
-
-	pthread_exit(NULL);
+		pthread_exit(NULL);
+	 }
 }
 
-int main(void)
+
+void* manejarCliente(void* socket){
+	int newfd;
+	newfd = (int) socket;
+
+	int numbytes;
+	int buf;
+
+	//bucleo hasta que se desconecte
+	while(1){
+		numbytes = recv(newfd, &buf, 1, 0); //leo el primer byte. Me dirá el tipo de paquete. (es un int)
+
+		comprobarConexion(numbytes, newfd); //Me fijo si lo que recibí esta todo ok.
+
+		manejarDatos(buf, newfd); //Si llegamos hasta acá manejamos los datos que recibimos.
+	}
+}
+
+void* iniciarServer()
 {
-	fd_set master;   // conjunto maestro de descriptores de fichero
+
 	fd_set read_fds; // conjunto temporal de descriptores de fichero para select()
 	struct sockaddr_in myaddr;     // dirección del servidor
 	struct sockaddr_in remoteaddr; // dirección del cliente
 	int fdmax;        // número máximo de descriptores de fichero
 	int listener;     // descriptor de socket a la escucha
 	int newfd;        // descriptor de socket de nueva conexión aceptada
-	char buf[256];    // buffer para datos del cliente
-	int nbytes;
 	int yes=1;        // para setsockopt() SO_REUSEADDR, más abajo
 	int addrlen;
-	int i, j;
+	int i;
 	FD_ZERO(&master);    // borra los conjuntos maestro y temporal
 	FD_ZERO(&read_fds);
 	// obtener socket a la escucha
@@ -112,10 +97,10 @@ int main(void)
 	// seguir la pista del descriptor de fichero mayor
 	fdmax = listener; // por ahora es éste
 
-    int maxclientes, contador;
-    maxclientes = 100;
-    contador = 0;
+    int contador = 0;
+
 	// bucle principal
+
 	for(;;) {
 
 		read_fds = master; // cópialo
@@ -141,9 +126,8 @@ int main(void)
 							"socket %d\n", inet_ntoa(remoteaddr.sin_addr), newfd);
 
 						int rc;
-						maxclientes = 100;
-						pthread_t tid[maxclientes];
-						rc = pthread_create(&tid[contador], NULL, holaMundo, newfd);
+						pthread_t tid[MAXCLIENTES];
+						rc = pthread_create(&tid[contador], NULL, manejarCliente, newfd);
 								if(rc) printf("no pudo crear el hilo");
 						contador++;
 						//verificar contadorde hilos (para cuando cerramos hilos)
@@ -152,8 +136,11 @@ int main(void)
 			}
 		}
 	}
+}
 
-
-
-	return 0;
+void inicializarServer(){
+	int rc;
+	pthread_t tid;
+	rc = pthread_create(&tid, NULL, iniciarServer, NULL);
+		if(rc) printf("no pudo crear el hilo");
 }
