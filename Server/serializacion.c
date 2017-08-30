@@ -6,6 +6,7 @@
  */
 
 #include "serializacion.h"
+#include <stdio.h>
 
 void manejarDatos(int buf, int socket){
 	switch(buf){
