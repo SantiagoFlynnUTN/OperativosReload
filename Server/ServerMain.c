@@ -2,7 +2,7 @@
     ** selectserver.c -- servidor de chat multiusuario
     */
 
-#include "conecciones.h"
+#include "conexiones.h"
 
 int main(){
 
